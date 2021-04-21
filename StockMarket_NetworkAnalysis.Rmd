@@ -1,0 +1,274 @@
+---
+title: "StockMarket_NetworkAnalysis"
+author: "Dinny, Pranita, Xin and Aakash"
+date: "7/22/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r imports}
+library(tidyquant)
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+
+library(quantmod)
+library(timetk)
+library(reticulate)
+use_condaenv("r-reticulate")
+# Set location to Python 3
+reticulate::use_python("/usr/bin/python3")
+```
+
+
+## Step 1: Load Dataset
+
+```{r loadDataset}
+#Load the stoc market dataset 01/01/2029 - 07/22/2020
+stock_prices = read.csv("stocks_price_final.csv")
+#sapply(stockPrices, class)
+nrow(stock_prices)
+head(stock_prices)
+```
+
+
+## Step 2: Find cross correlation for each pair of stock using correlation coefficient formula
+### Calculate daily price return
+### Calculate Correlation Coieficcient
+### http://www.sthda.com/english/wiki/correlation-test-between-two-variables-in-r
+### Show Plot showing variis Time Windows vs mean correlation
+### Filter the edges by threshold.
+### Plot a graph Number of Nodes , edges by threshold
+### Finding the Distance between nodes. 
+
+### Step 2.1 Convert to a wider format with dates rows, symbols as columns and adjusted as value
+```{r  daily returns}
+# remove B and $ sign in market cap and change to numeric
+stock_prices$market.cap = as.numeric(gsub("[\\$, B]", "", stock_prices$market.cap))
+#Remove duplicate by  date and symbol
+stock_prices <- stock_prices %>% distinct(date,symbol,.keep_all = TRUE)
+# create a tibble with symbol,date and adjusted value columns
+stocks_mat<- as.tibble(stock_prices %>% select(date,symbol,adjusted))
+# reshape the matrix to widen it for all the symbols and arrange in ascending order of dates.
+stocks_mat <- as.tibble(spread(stocks_mat, key=symbol,value= adjusted) %>% arrange(date))
+head(stocks_mat)
+```
+### Step 2.2 Calculate daily price return
+```{r daily returns}}
+#Calculate price return per 
+#T
+stock_returns <- data.frame(date = stocks_mat$date[-1], sapply(stocks_mat[-1], function(x) 
+  {
+    diff(log(x))
+  }))
+
+head(stock_returns)
+
+```
+
+
+```{r EDA}
+library(plotly)
+library(wordcloud)
+#Pie chart of Percentage STOCKS by sector
+sec_count <- stock_prices %>% 
+  group_by(sector) %>% 
+  summarise(sec_count= n()) %>% 
+  arrange(desc(sec_count))
+plot_ly(sec_count, labels = ~sector, values = ~sec_count, type = 'pie')%>%
+  layout(title="Pie chart of Percentage of Stocks by different Secotrs")
+
+#wordcloud of industries
+ind_count <- stock_prices %>% 
+  group_by(industry) %>% 
+  summarise(ind_count= n()) %>% 
+  arrange(desc(ind_count))
+set.seed(1)
+par(mfrow=c(1, 1),bg="grey97")
+wordcloud(ind_count$industry, ind_count$ind_count, max.words = 50, scale=c(2.0,.5), 
+          random.color = TRUE, random.order=FALSE, rot.per=0, 
+          colors=brewer.pal(9,"Set1"))
+
+#trends in sectors
+sec_count2 <- stock_prices %>% 
+  group_by(sector,date) %>% 
+  summarise(price=sum(close,na.rm = TRUE))
+
+sec_count2 %>% filter(date > "2020-01-01") %>%
+  ggplot(aes(x=date, y=price, color = sector)) + 
+  geom_smooth() + facet_wrap(~sector,scales = "free_y")
+  labs(x="Time series", y="Total price",
+       title = "Time series for prie variation in different sectors")
+
+```
+
+```{r plot daily returns}
+
+####comparison on daily returns in 2019-2020 
+stock_returns19 <- stock_returns[1:251,]
+stock_returns20 <- stock_returns[252:391,]
+
+stock_returns19$mean <- rowMeans(subset(stock_returns19[,2:4612]),na.rm = T)
+stock_returns20$mean <- rowMeans(subset(stock_returns20[,2:4612]),na.rm = T)
+
+
+stock_returns19$date <- as.POSIXct(stock_returns19$date,format="%Y-%m-%d")
+stock_returns19$date <- as.Date(stock_returns19$date,format = "%Y-%M-%D")
+
+stock_returns20$date <- as.POSIXct(stock_returns20$date,format="%Y-%m-%d")
+stock_returns20$date <- as.Date(stock_returns20$date,format = "%Y-%M-%D")
+
+library(ggplot2)
+library(hrbrthemes)
+library(scales)
+
+
+ggplot(stock_returns19[,c(1,4613)],aes(x=date,y=mean,group = 1)) + geom_line(color="#69b3a2", size=0.5, alpha=0.9, linetype=1)+scale_x_date(date_break="1 month",labels = date_format("%b"))+labs(title="Mean of Daily Returns in 2019",xlab = "Trending Dates of 2019", y = "Mean Daily Returns")+theme(plot.title = element_text(face = "bold",hjust = 0.5))
+
+
+ggplot(stock_returns20[,c(1,4613)],aes(x=date,y=mean,group = 1))+geom_line(color="navyblue", size=0.5, alpha=0.9, linetype=1)+scale_x_date(date_break="1 month",labels = date_format("%b"))+labs(title="Mean of Daily Returns in 2020",xlab = "Trending Dates of 2020", y = "Mean Daily Returns")+theme(plot.title = element_text(face = "bold",hjust = 0.5))
+
+dat <- split(stock_prices, stock_prices$symbol)
+
+for (i in 1:length(dat)){
+  dat[[i]]$returns <- 0
+ # try(for (j in 2:nrow(dat[[i]])){
+  #  dat[[i]]$returns[j] <- dat[[i]]$close[j] - dat[[i]]$close[j-1]
+ # })
+  if (nrow(dat[[i]])==1) next
+  for (j in 2:nrow(dat[[i]])){
+    dat[[i]]$returns[j] <- dat[[i]]$close[j] - dat[[i]]$close[j-1]
+  }
+}
+
+dat <- unsplit(dat, stockPrices$symbol)
+
+    
+```
+
+
+### Step 2.3 Calculate Correlation Coieficcient
+
+
+```{r setup python}
+#install.packages("reticulate") 
+conda_create("r-reticulate")
+#use_condaenv("r-reticulate")
+#py_install("pandas")
+```
+
+
+```{python calculate correlation coefficient}
+import pandas as pd
+stocks_cross_corr = {}
+W = 21 #21 based on the paper Asset trees and asset graphs in financial markets J.-P. Onnela et all
+for i in range(1,len(r.stock_returns),W):
+    stocks_cross_corr[i]=r.stock_returns[i:(i+W)].corr(method='pearson')
+    stocks_cross_corr[i].fillna(0,inplace=True)
+```
+
+
+```{r calculate correlation coefficient rolling windows}
+W = 21
+# create a sequence of number which follows 21 days window in 392 obs. The same as 'range(1,len(r.stock_returns),W)' in python
+seq <- seq(1,nrow(stock_returns),W)
+stocks_cross_corr_dict <- list()
+
+# loop all numbers in the sequence
+for (i in seq){
+  temp <- cor(stock_returns[(i+1):(i+W),][-1])
+  # replace all NA in 'temp'
+  temp[is.na(temp)] <- 0
+  stocks_cross_corr_dict[[i]] <- temp
+}
+
+# the last window includes only 13 days, it needs to be calculated separately
+temp <- cor(stock_returns[(379+1):nrow(stock_returns),][-1])
+cross_corr_379[is.na(cross_corr_379)] <- 0
+temp[is.na(temp)] <- 0
+stocks_cross_corr_dict[[length(stocks_cross_corr_dict) + 1]] <- temp
+```
+
+
+```{r plot correlation coefficient}
+
+
+```
+
+
+## Step 3: Find cross correlation for all stocks
+
+```{r allEdges}
+# Corr for the entire period
+stocks_cross_corr <- cor(stock_returns[-1], method = c("pearson"))
+
+```
+
+## Step 4: Select and apply the method to choose strong edges. MST, Planar maximally filtered graph or winner take all
+
+```{r filterEdges}
+#Add code to filter the corr
+
+```
+
+## Step 5: Create Graph data structure
+
+```{r}
+
+```
+
+
+
+## Step 6: Explore and run GN Method
+
+```{r gn}
+
+```
+
+## Step 7: Explore and run CNM Method
+
+```{r CNM}
+
+```
+
+## Step 8: Explore and run Fluid Community Method
+```{r fluidCommunities}
+
+```
+
+## Step 9: Answer Question 1
+
+```{r}
+
+```
+
+## Step 10: Answer Question 2
+
+```{r}
+
+```
+
+
+## Step 11: Answer Question 3
+
+```{r}
+
+```
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+## Including Plots
+
+You can also embed plots, for example:
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

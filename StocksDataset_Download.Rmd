@@ -1,0 +1,57 @@
+---
+title: "StockData"
+author: "Aakash Kedia"
+date: "7/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyquant)
+library(jsonlite)
+library(tidyverse)
+library(readr)
+library(igraph)
+library(dplyr)
+library(lubridate)
+library(data.table)
+```
+
+```{r}
+Sp500 <- tq_index("SP500") %>% add_column(exchange = "SP500")
+sp400 <- tq_index("SP400") %>% add_column(exchange = "SP400")
+sp600 <- tq_index("SP600") %>% add_column(exchange = "SP600")
+NASDAQ <-tq_exchange("NASDAQ") %>% add_column(exchange = "NASDAQ")
+NYSE<-tq_exchange("NYSE")%>% add_column(exchange = "NYSE")
+#Rus2000 <- tq_index("RUSSELL2000") %>% add_column(exchange = "RUSSELL2000")
+#Rus1000 <- tq_index("RUSSELL1000") %>% add_column(exchange = "RUSSELL1000")
+tickers <- rbind(NASDAQ,NYSE)
+
+str(tickers)
+
+cleanTickers <- tickers %>% filter(!is.na(market.cap))  %>% 
+  filter(!is.na(sector)) %>% 
+filter(!is.na(industry))
+
+tes <- sample_n(cleanTickers,20)
+nrow(tes)
+
+StockPriceFinal = data.frame()
+for (i in 1 :nrow(cleanTickers)){
+    stockPr <- try(tq_get(x = cleanTickers$symbol[i], get = "stock.prices", 
+                             from = "2019-01-01",warnings = FALSE,
+                             stringsAsFactors = FALSE)  %>% 
+        add_column(market.cap = cleanTickers$market.cap[i], 
+                   sector = cleanTickers$sector[i],
+                   industry = cleanTickers$industry[i], 
+                   exchange = cleanTickers$exchange[i]))
+    df <- data.frame(stockPr)
+    StockPriceFinal <- rbind(StockPriceFinal,df)
+}
+
+unique1<-unique(StockPriceFinal$symbol)
+getwd()
+write.csv(StockPriceFinal, file="stock_prices_final.csv")
+save(StockPriceFinal, file="RData")
+
+```
